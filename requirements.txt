@@ -1,7 +1,23 @@
+# Core dependencies
 anthropic>=0.39.0
 pydantic>=2.0.0
-rich>=13.0.0
-numpy>=1.24.0
-matplotlib>=3.7.0
-pyyaml>=6.0.0
 python-dotenv>=1.0.0
+pyyaml>=6.0.0
+
+# MARL and training
+numpy>=1.24.0
+tqdm>=4.66.0
+
+# CLI and visualization
+rich>=13.0.0
+matplotlib>=3.7.0
+
+# Dashboard (optional - for Week 3)
+streamlit>=1.28.0
+plotly>=5.17.0
+
+# Experiment tracking (optional)
+wandb>=0.16.0
+
+# Testing
+pytest>=7.4.0

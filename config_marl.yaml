@@ -1,0 +1,112 @@
+# Orchestry MARL Configuration
+
+# MARL Algorithm Settings
+marl:
+  algorithm: "API-GRPO"  # Group Relative Policy Optimization for APIs
+  beam_width: 10  # Number of trajectories to keep in beam search
+  k_samples: 5  # Number of response samples per agent per turn
+  temperature: 0.8  # Sampling temperature for diversity
+  exploration_rate: 0.1  # Probability of exploration vs exploitation
+  learning_frequency: 5  # Extract behaviors every N episodes
+
+# API Settings
+api:
+  provider: "anthropic"
+  model: "claude-3-5-sonnet-20241022"  # or "claude-sonnet-4-20250514"
+  max_tokens: 1024
+  rate_limit_delay: 0.5  # seconds between API calls
+  cache_size: 1000  # Maximum cached responses
+
+# Agent Configuration
+agents:
+  - role: "Code Writer"
+    goal: "Write clean, correct, and well-documented code"
+    system_prompt: |
+      You are a skilled software engineer writing code solutions.
+
+      Your responsibilities:
+      - Write clean, readable code
+      - Follow best practices and coding standards
+      - Include docstrings and type hints
+      - Handle edge cases
+      - Write code that others can easily understand and build upon
+
+      When writing code:
+      - Put code in ```python code blocks
+      - Be clear and specific
+      - Think about what your teammates will need to review and improve
+
+      Focus on producing high-quality initial implementations.
+
+  - role: "Code Reviewer"
+    goal: "Review code and suggest specific improvements"
+    system_prompt: |
+      You are an expert code reviewer.
+
+      Your responsibilities:
+      - Carefully review the code written by your teammate
+      - Identify bugs, edge cases, and potential improvements
+      - Suggest specific, actionable improvements
+      - Be constructive and collaborative
+      - Reference the code explicitly when giving feedback
+
+      When reviewing:
+      - Point out specific lines or sections
+      - Explain WHY something should be changed
+      - Suggest concrete alternatives
+      - Be thorough but focused
+
+      Provide detailed, helpful review feedback.
+
+  - role: "Code Refactorer"
+    goal: "Implement improvements based on review feedback"
+    system_prompt: |
+      You are a refactoring specialist.
+
+      Your responsibilities:
+      - Read the reviewer's feedback carefully
+      - Implement the suggested improvements
+      - Maintain or improve code quality
+      - Preserve working functionality while enhancing the code
+      - Build on both the writer's and reviewer's contributions
+
+      When refactoring:
+      - Put final code in ```python code blocks
+      - Address all review feedback
+      - Explain what you changed and why
+      - If complete, say "FINAL CODE:" to signal completion
+
+      Create the best possible version incorporating all feedback.
+
+# Task Configuration
+task:
+  type: "code_review"
+  max_turns: 15  # Maximum turns per episode
+  min_turns: 3  # Minimum turns before episode can end
+
+# Reward Weights (must sum to 1.0)
+rewards:
+  quality_weight: 0.4  # Code correctness, readability, efficiency
+  collaboration_weight: 0.4  # How well agents built on each other
+  efficiency_weight: 0.2  # Completed in reasonable turn count
+
+# Training Settings
+training:
+  num_episodes: 20  # Total training episodes
+  test_episodes: 3  # For quick testing
+  save_frequency: 5  # Save checkpoint every N episodes
+  save_dir: "runs"  # Directory to save results
+
+# Output Settings
+output:
+  verbose: true
+  show_agent_thinking: false
+  save_episodes: true
+  log_level: "INFO"
+
+# Advanced Settings
+advanced:
+  use_behavior_library: true  # Extract and learn from successful patterns
+  min_episodes_for_learning: 5  # Minimum episodes before extracting behaviors
+  top_percentile_for_learning: 0.2  # Use top 20% of episodes for learning
+  max_learned_behaviors_per_agent: 10  # Maximum behaviors to keep
