@@ -40,6 +40,7 @@ class ResearchLabTask(BaseTask):
         max_turns: int = 15,
         require_novelty: bool = True,
         use_real_data: bool = False,
+        custom_problems: list[dict[str, Any]] | None = None,
     ) -> None:
         """
         Initialize research lab task.
@@ -49,6 +50,7 @@ class ResearchLabTask(BaseTask):
             max_turns: Maximum conversation turns
             require_novelty: Whether to penalize non-novel hypotheses
             use_real_data: Whether to use real datasets (requires API access)
+            custom_problems: User-provided research problems (overrides built-in problems)
         """
         super().__init__()
         self.domain = domain
@@ -65,8 +67,11 @@ class ResearchLabTask(BaseTask):
             "paper_writer",
         ]
 
-        # Load domain-specific research problems
-        self.research_problems = self._load_research_problems()
+        # Load research problems (custom or built-in)
+        if custom_problems:
+            self.research_problems = custom_problems
+        else:
+            self.research_problems = self._load_research_problems()
 
         # Track research progress
         self.current_problem: dict[str, Any] = {}
