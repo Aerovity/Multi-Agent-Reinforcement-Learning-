@@ -10,6 +10,7 @@ from typing import cast
 
 import anthropic
 from anthropic.types import TextBlock
+import google.generativeai as genai
 
 from .trajectory import MultiTurnTrajectory
 
@@ -19,25 +20,44 @@ logger = logging.getLogger(__name__)
 class BehaviorLibrary:
     """Library of successful behavioral patterns learned from high-reward episodes.
 
-    Uses Claude to analyze what worked in successful episodes and
+    Uses Claude or Gemini to analyze what worked in successful episodes and
     extract structured behavioral patterns.
     """
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-sonnet-4-20250514",
+        provider: str = "claude",
+        gemini_api_key: str | None = None,
+    ) -> None:
         """Initialize behavior library.
 
         Args:
-            api_key: Anthropic API key
-            model: Claude model for analysis
+            api_key: API key (Anthropic for Claude, Google for Gemini)
+            model: Model name for analysis
+            provider: "claude" or "gemini"
+            gemini_api_key: Separate Gemini API key if needed
 
         """
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.provider = provider.lower()
         self.model = model
+
+        if self.provider == "claude":
+            self.client = anthropic.Anthropic(api_key=api_key)
+        elif self.provider == "gemini":
+            if gemini_api_key:
+                genai.configure(api_key=gemini_api_key)
+            elif api_key:
+                genai.configure(api_key=api_key)
+            self.client = genai.GenerativeModel(model or "gemini-2.0-flash-thinking-exp")
+        else:
+            raise ValueError(f"Unknown provider: {provider}. Use 'claude' or 'gemini'")
 
         # Storage for learned behaviors by agent role
         self.behaviors_by_role: dict[str, dict[str, list[str]]] = {}
 
-        logger.info("Initialized BehaviorLibrary")
+        logger.info(f"Initialized BehaviorLibrary with {provider}")
 
     def extract_successful_behaviors(
         self,
@@ -88,21 +108,31 @@ class BehaviorLibrary:
         # Build analysis prompt
         prompt = self._build_analysis_prompt(top_episodes, agent_roles, task_type)
 
-        # Ask Claude to analyze
+        # Ask LLM to analyze
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                temperature=0.0,  # Deterministic analysis
-                messages=[{"role": "user", "content": prompt}],
-            )
-
-            # Parse structured response
-            content_block = response.content[0]
-            if isinstance(content_block, TextBlock):
-                text_content = content_block.text
+            if self.provider == "claude":
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    temperature=0.0,  # Deterministic analysis
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                # Parse structured response
+                content_block = response.content[0]
+                if isinstance(content_block, TextBlock):
+                    text_content = content_block.text
+                else:
+                    text_content = str(content_block)
+            elif self.provider == "gemini":
+                response = self.client.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.0, max_output_tokens=4096
+                    ),
+                )
+                text_content = response.text
             else:
-                text_content = str(content_block)
+                raise ValueError(f"Unknown provider: {self.provider}")
             behaviors = self._parse_behavior_response(text_content, agent_roles)
 
             # Update library
@@ -124,8 +154,11 @@ class BehaviorLibrary:
             return behaviors
 
         except Exception as e:
-            logger.exception(f"Error extracting behaviors: {e}")
-            return {}
+            logger.error(f"Error extracting behaviors: {e}")
+            logger.error(f"Provider: {self.provider}, Model: {self.model}")
+            logger.error(f"Number of episodes: {len(episodes)}, Top episodes: {len(top_episodes)}")
+            # Return empty but valid structure so training continues
+            return {role: {"collaboration": [], "scientific_rigor": [], "novelty": []} for role in agent_roles}
 
     def _build_analysis_prompt(
         self,
@@ -158,6 +191,7 @@ class BehaviorLibrary:
             "code_review": ["collaboration", "code_quality", "efficiency"],
             "documentation": ["collaboration", "clarity", "completeness"],
             "story_writing": ["collaboration", "creativity", "coherence"],
+            "research_lab": ["collaboration", "scientific_rigor", "novelty"],
         }
 
         categories = categories_map.get(task_type, ["collaboration", "quality", "efficiency"])
