@@ -39,7 +39,7 @@ agents:
 
   model: "gemini-2.0-flash"  # STABLE: Fast model with 1000 RPM on paid tier
   temperature: 0.7
-  max_tokens: 1024
+  max_tokens: 4096  # INCREASED: Allow 7-10 page papers (~3500-4000 tokens)
 
 # ============================================================================
 # MARL Training Configuration
@@ -62,24 +62,27 @@ marl:
   critic_model: "gemini-2.0-flash-thinking-exp"
 
 # ============================================================================
-# Reward Configuration - Scientific Research Metrics
+# Reward Configuration - Scientific Research Metrics (Optimized for 50 episodes)
 # ============================================================================
 rewards:
   # Reward component weights (must sum to 1.0)
-  scientific_rigor_weight: 0.25    # Proper methodology, citations
-  novelty_weight: 0.25             # Novel hypotheses and approaches
-  completeness_weight: 0.20        # All research phases completed
-  collaboration_weight: 0.15       # Agents building on each other
-  feasibility_weight: 0.15         # Realistic experimental designs
+  # ADJUSTED: Higher rigor + collaboration for better multi-agent learning
+  scientific_rigor_weight: 0.30    # Proper methodology, citations (was 0.25)
+  novelty_weight: 0.20             # Novel hypotheses and approaches (was 0.25)
+  completeness_weight: 0.20        # All research phases completed (same)
+  collaboration_weight: 0.20       # Agents building on each other (was 0.15) ⬆️
+  feasibility_weight: 0.10         # Realistic experimental designs (was 0.15)
 
-  # Bonus rewards
-  novel_hypothesis_bonus: 2.0      # Bonus for truly novel ideas
-  complete_paper_bonus: 3.0        # Bonus for complete research paper
-  cross_reference_bonus: 0.5       # Bonus for referencing other agents
+  # Bonus rewards (more aggressive for 50-episode training)
+  novel_hypothesis_bonus: 3.0      # Bonus for truly novel ideas (was 2.0)
+  complete_paper_bonus: 3.0        # Bonus for complete research paper (same)
+  cross_reference_bonus: 1.0       # Bonus for referencing other agents (was 0.5) ⬆️
 
-  # Penalties
-  repetition_penalty: -1.0         # Penalty for repeating existing work
-  unrealistic_penalty: -2.0        # Penalty for infeasible experiments
+  # Penalties (stricter for long training)
+  repetition_penalty: -2.0         # Penalty for repeating existing work (was -1.0)
+  unrealistic_penalty: -3.0        # Penalty for infeasible experiments (was -2.0)
+  individualism_penalty: -1.0      # 🆕 Penalty per agent working solo without references
+  team_individualism_penalty: -2.0 # 🆕 Additional penalty if >50% of agents work individually
 
 # ============================================================================
 # Training Optimization
@@ -169,8 +172,8 @@ domains:
 # ============================================================================
 meta_learning:
   enabled: true
-  update_frequency: 10  # Update prompts every 10 episodes
-  top_k_episodes: 5     # Learn from top 5 episodes
+  update_frequency: 5   # IMPROVED: Update prompts every 5 episodes (more frequent learning)
+  top_k_episodes: 3     # IMPROVED: Learn from top 3 episodes (best quality patterns)
 
   # Patterns to extract
   patterns:

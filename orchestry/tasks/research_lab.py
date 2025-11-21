@@ -344,17 +344,9 @@ class ResearchLabTask(BaseTask):
 
     def _is_research_complete(self) -> bool:
         """Check if research process is complete."""
-        # Complete if all phases done or max turns reached
-        # Paper should be academic-length (3000+ chars minimum for good quality)
-        all_phases_complete = (
-            len(self.literature_reviewed) >= 2
-            and len(self.hypotheses_generated) >= 1
-            and len(self.experiments_designed) >= 1
-            and len(self.analyses_completed) >= 1
-            and len(self.paper_draft) >= 3000  # Academic-length paper requirement
-        )
-
-        return all_phases_complete or self.turn_count >= self.max_turns
+        # Complete only when max turns reached to allow iterative refinement
+        # This enables agents to review, revise, and improve their work over multiple cycles
+        return self.turn_count >= self.max_turns
 
     def evaluate(self, trajectory: list[dict[str, Any]]) -> dict[str, float]:
         """
@@ -476,38 +468,88 @@ class ResearchLabTask(BaseTask):
         return min(10.0, score)
 
     def _calculate_collaboration_score(self, trajectory: list[dict[str, Any]]) -> float:
-        """Calculate how well agents collaborated."""
+        """Calculate how well agents collaborated.
+
+        Rewards cross-referencing and building on previous work.
+        PENALIZES agents working in isolation without referencing others.
+        """
         if len(trajectory) < 2:
             return 0.0
 
-        collaboration_score = 0.0
+        collaboration_score = 5.0  # Start at neutral (5/10)
+        total_agents = len(trajectory)
+
+        # Track which agents are working individually vs collaboratively
+        individualism_count = 0
+        collaboration_count = 0
 
         # Check for references to other agents' work
         for i, turn in enumerate(trajectory[1:], 1):
             action = turn.get("action", "").lower()
+            agent_role = turn.get("agent_role", "")
 
-            # Look for references to previous contributions
-            references = [
+            # Look for strong collaboration indicators
+            strong_references = [
                 "based on",
                 "building on",
-                "as mentioned",
+                "as mentioned by",
                 "according to",
                 "following",
-                "using the",
+                "as noted by",
+                "from the",
+                "synthesizing",
+                "integrating",
             ]
-            if any(ref in action for ref in references):
+
+            # Look for explicit agent references
+            agent_references = [
+                "literature synthesizer",
+                "hypothesis generator",
+                "experimental designer",
+                "data analyst",
+                "previous agent",
+                "turn 1",
+                "turn 2",
+                "turn 3",
+                "turn 4",
+            ]
+
+            has_strong_reference = any(ref in action for ref in strong_references)
+            has_agent_reference = any(ref in action for ref in agent_references)
+
+            # Reward collaboration
+            if has_strong_reference:
+                collaboration_score += 1.5
+                collaboration_count += 1
+            elif has_agent_reference:
                 collaboration_score += 1.0
+                collaboration_count += 1
+            elif i > 1 and len(action) > 100:
+                # Long response but NO references = individualism
+                individualism_count += 1
+                collaboration_score -= 1.0  # 🚨 PENALTY for solo work
 
             # Check for cross-phase integration
             if i >= 2:
-                prev_role = trajectory[i - 1].get("role", "")
-                curr_role = turn.get("role", "")
-                if prev_role != curr_role:  # Different agents
-                    # Check if current agent references previous
-                    if len(action) > 50:
-                        collaboration_score += 0.5
+                prev_role = trajectory[i - 1].get("agent_role", "")
+                curr_role = agent_role
+                if prev_role != curr_role and len(action) > 50:
+                    # Different agent continuing work = bonus
+                    collaboration_score += 0.5
 
-        return min(10.0, collaboration_score)
+        # Additional penalty if MOST agents work individually
+        if total_agents > 2:
+            individualism_ratio = individualism_count / (total_agents - 1)
+            if individualism_ratio > 0.5:  # More than half work solo
+                collaboration_score -= 2.0  # 🚨 STRONG PENALTY
+            elif individualism_ratio > 0.3:  # 30-50% work solo
+                collaboration_score -= 1.0  # 🚨 MODERATE PENALTY
+
+        # Bonus if ALL agents reference others
+        if collaboration_count >= (total_agents - 1):
+            collaboration_score += 2.0  # 🎁 BONUS for full team collaboration
+
+        return max(0.0, min(10.0, collaboration_score))
 
     def _calculate_feasibility_score(self) -> float:
         """Calculate experimental feasibility."""

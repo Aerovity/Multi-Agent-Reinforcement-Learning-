@@ -154,8 +154,11 @@ class BehaviorLibrary:
             return behaviors
 
         except Exception as e:
-            logger.exception(f"Error extracting behaviors: {e}")
-            return {}
+            logger.error(f"Error extracting behaviors: {e}")
+            logger.error(f"Provider: {self.provider}, Model: {self.model}")
+            logger.error(f"Number of episodes: {len(episodes)}, Top episodes: {len(top_episodes)}")
+            # Return empty but valid structure so training continues
+            return {role: {"collaboration": [], "scientific_rigor": [], "novelty": []} for role in agent_roles}
 
     def _build_analysis_prompt(
         self,
@@ -188,6 +191,7 @@ class BehaviorLibrary:
             "code_review": ["collaboration", "code_quality", "efficiency"],
             "documentation": ["collaboration", "clarity", "completeness"],
             "story_writing": ["collaboration", "creativity", "coherence"],
+            "research_lab": ["collaboration", "scientific_rigor", "novelty"],
         }
 
         categories = categories_map.get(task_type, ["collaboration", "quality", "efficiency"])

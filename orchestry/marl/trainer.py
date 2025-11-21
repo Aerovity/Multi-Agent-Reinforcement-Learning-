@@ -80,12 +80,20 @@ class MARLTrainer:
             gemini_api_key=gemini_api_key
         )
 
-        model_name: str = self.config.get("model", "claude-sonnet-4-20250514")
-        # Note: Value estimator and behavior library still use Claude for now
-        # Can be extended to support Gemini in future
-        self.value_estimator = CentralizedValueEstimator(api_key=api_key, model=model_name)
+        # Use the same provider and model for behavior library as agents
+        if provider == "gemini":
+            behavior_api_key = gemini_api_key or api_key
+            behavior_model = self.config.get("model", "gemini-2.0-flash")
+        else:
+            behavior_api_key = api_key
+            behavior_model = self.config.get("model", "claude-sonnet-4-20250514")
 
-        self.behavior_library = BehaviorLibrary(api_key=api_key, model=model_name)
+        self.value_estimator = CentralizedValueEstimator(api_key=api_key, model=behavior_model)
+        self.behavior_library = BehaviorLibrary(
+            api_key=behavior_api_key,
+            model=behavior_model,
+            provider=provider
+        )
 
         # Episode history
         self.episodes: list[MultiTurnTrajectory] = []
@@ -128,6 +136,10 @@ class MARLTrainer:
 
             # Store episode
             self.episodes.append(trajectory)
+
+            # 🆕 SAVE PAPER IMMEDIATELY after episode completes (crash protection!)
+            if self.config.get("output", {}).get("save_papers", True):
+                self._save_single_paper(episode_num + 1, trajectory)
 
             # Update progress bar
             avg_reward = np.mean([ep.total_reward for ep in self.episodes[-10:]])
@@ -380,38 +392,18 @@ class MARLTrainer:
         return best_trajectory, best_reward
 
     def _check_trajectory_complete(self, traj: MultiTurnTrajectory) -> bool:
-        """Check if a trajectory is complete based on research phases.
+        """Check if a trajectory is complete based on max turns.
 
         Args:
             traj: Trajectory to check
 
         Returns:
-            True if trajectory has completed all research phases
+            True if trajectory has reached max turns (allows iterative refinement)
         """
-        # Must have minimum turns (all 5 agents contributed)
-        if len(traj) < 5:
-            return False
-
-        # Check if all phases attempted by analyzing agent roles
-        agent_roles_present = set()
-        paper_length = 0
-
-        for turn in traj.turns:
-            agent_roles_present.add(turn.agent_role)
-            # Track paper writer output
-            if turn.agent_role == "paper_writer":
-                paper_length += len(turn.action)
-
-        # All 5 roles must have contributed
-        required_roles = {"literature_synthesizer", "hypothesis_generator",
-                         "experimental_designer", "data_analyst", "paper_writer"}
-        all_phases_attempted = required_roles.issubset(agent_roles_present)
-
-        # Paper writer should have produced substantial content
-        substantial_paper = paper_length >= 3000
-
-        # Complete if all phases done with substantial paper
-        return all_phases_attempted and substantial_paper
+        # Complete only when max_turns reached to enable multi-round collaboration
+        # This allows agents to review, revise, and improve their work over multiple cycles
+        max_turns = self.task.max_turns if hasattr(self.task, 'max_turns') else 15
+        return len(traj) >= max_turns
 
     def _update_agent_behaviors(self, verbose: bool = False) -> None:
         """Extract successful behaviors and update agents.
@@ -448,6 +440,11 @@ class MARLTrainer:
                     new_behaviors.extend(behavior_list)
 
                 self.grpo.update_agent_behaviors(agent=agent, new_behaviors=new_behaviors)
+
+        # 🆕 SAVE BEHAVIORS IMMEDIATELY after extraction (crash protection!)
+        behaviors_path = self.save_dir / "learned_behaviors.json"
+        self.behavior_library.save_to_file(str(behaviors_path))
+        logger.debug(f"💾 Saved learned behaviors immediately: {behaviors_path}")
 
         if verbose:
             print(f"\nUpdated {len(behaviors)} agents with new behaviors")
@@ -523,6 +520,26 @@ class MARLTrainer:
             json.dump(self._get_training_summary(), f, indent=2)
 
         logger.info(f"Results saved to: {self.save_dir}")
+
+    def _save_single_paper(self, episode_num: int, trajectory: MultiTurnTrajectory) -> None:
+        """Save a single research paper immediately after generation (crash protection).
+
+        Args:
+            episode_num: Episode number (1-indexed)
+            trajectory: Episode trajectory containing the paper
+        """
+        papers_dir = self.save_dir / "papers"
+        papers_dir.mkdir(exist_ok=True, parents=True)
+
+        # Extract paper content from trajectory
+        paper_content = self._extract_paper_from_episode(trajectory)
+
+        if paper_content:
+            # Save as markdown
+            paper_path = papers_dir / f"episode_{episode_num:03d}_paper.md"
+            with open(paper_path, "w", encoding="utf-8") as f:
+                f.write(paper_content)
+            logger.debug(f"💾 Saved paper for episode {episode_num} immediately: {paper_path}")
 
     def _save_research_papers(self) -> None:
         """Save generated research papers as markdown files."""
